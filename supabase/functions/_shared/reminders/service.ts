@@ -120,6 +120,17 @@ export async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>
   const { action, reminderId } = parsed;
   const now = new Date();
 
+  // נעילה אטומית: רק הלחיצה הראשונה על תזכורת מטופלת. לחיצה כפולה / ניסיון חוזר של טלגרם לא ייצרו כפילויות.
+  const { data: claimed, error: claimErr } = await db().rpc("claim_reminder_action", {
+    p_id: reminderId,
+    p_action: action,
+  });
+  if (claimErr) throw claimErr;
+  if (!claimed) {
+    await answerCallback(cb.id, "כבר טופל 👍");
+    return true;
+  }
+
   const { data: r } = await db().from("reminders").select("id, task_id, kind, text, tasks(id, title, category, status, snooze_count)")
     .eq("id", reminderId).maybeSingle();
   if (!r) {
