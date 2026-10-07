@@ -15,7 +15,19 @@ import { buildContext, type ContextInput, SYSTEM_PROMPT } from "./prompt.ts";
 import { runTool, TOOLS } from "./tools.ts";
 
 export const CONCIERGE_MODEL = "claude-sonnet-5-5";
-const MAX_ITERATIONS = 8;
+const MAX_ITERATIONS = 10;
+
+// חיפוש באינטרנט — רץ בשרתים של Anthropic, לא אצלנו. גרסת 20260209 מסננת תוצאות לפני שהן נכנסות להקשר,
+// כך שדף ארוך לא מנפח את העלות. אזור זמן ישראל → "היום" ו"עכשיו" נכונים בתוצאות.
+const WEB_TOOLS = [
+  {
+    type: "web_search_20260209",
+    name: "web_search",
+    max_uses: 5,
+    user_location: { type: "approximate", timezone: "Asia/Jerusalem" }, // IL לא נתמך כ-country — העדפת מקורות ישראליים מגיעה מהפרומפט
+  },
+  { type: "web_fetch_20260209", name: "web_fetch", max_uses: 3 },
+];
 const RECENT_MESSAGES = 20;
 
 let anthropic: Anthropic | null = null;
@@ -117,17 +129,27 @@ export async function runConcierge(userText: string, opts: RunOptions = {}): Pro
         output_config: { effort: "medium" },
         // system ו-tools קבועים לגמרי → נשמרים ב-cache בין הודעות
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-        tools: TOOLS,
+        tools: [...TOOLS, ...WEB_TOOLS],
         messages,
       // deno-lint-ignore no-explicit-any
       } as any) as Anthropic.Beta.BetaMessage;
 
       trace.addUsage(response.model ?? CONCIERGE_MODEL, response.usage);
-      // append-only: התגובה נכנסת כמו שהיא, כולל thinking blocks
+      trace.addWebSearches(response.usage.server_tool_use?.web_search_requests ?? 0);
+      for (const b of response.content) {
+        if (b.type === "server_tool_use") trace.addToolCall(b.name, b.input, true);
+      }
+      // append-only: התגובה נכנסת כמו שהיא, כולל thinking blocks ותוצאות חיפוש
       messages.push({ role: "assistant", content: response.content as Anthropic.ContentBlockParam[] });
 
-      const text = response.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text)
-        .join("\n").trim();
+      // רק הטקסט שאחרי החיפוש האחרון: טקסט בין חיפושים הוא הערות ביניים של המודל, לא התשובה.
+      // (תשובה עם ציטוטים מתפצלת לכמה בלוקי text רצופים — כולם אחרי החיפוש, ולכן נשמרים.)
+      const lastNonText = response.content.findLastIndex((b) => b.type !== "text" && b.type !== "thinking");
+      const text = response.content.slice(lastNonText + 1).filter((b) => b.type === "text")
+        .map((b) => (b as { text: string }).text).join("").trim();
+
+      // חיפוש ארוך: השרת עצר באמצע לולאת החיפוש — שולחים שוב כמו שזה, והוא ממשיך מאיפה שעצר
+      if (response.stop_reason === "pause_turn") continue;
 
       if (response.stop_reason === "refusal") {
         reply = "לא הצלחתי לטפל בבקשה הזו. אפשר לנסח אחרת?";

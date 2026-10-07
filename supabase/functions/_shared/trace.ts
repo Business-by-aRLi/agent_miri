@@ -43,6 +43,11 @@ export class RunTrace {
     this.totals.cost += costUsd(model, u);
   }
 
+  /** חיפוש באינטרנט מתומחר בנפרד: $10 לאלף חיפושים. */
+  addWebSearches(n: number) {
+    this.totals.cost += n * 0.01;
+  }
+
   addToolCall(name: string, input: unknown, ok: boolean) {
     this.toolCalls.push({ name, input, ok });
   }
