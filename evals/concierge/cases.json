@@ -522,6 +522,26 @@
           "complete_task"
         ]
       }
+    },
+    {
+      "id": "dossier-status",
+      "message": "איפה עומד הפרויקט של עקיבא?",
+      "expect": {
+        "calls": [
+          {
+            "tool": "get_project_dossier",
+            "match": {
+              "project": "Kiddush Hub"
+            }
+          }
+        ],
+        "forbid": [
+          "create_task",
+          "update_task",
+          "complete_task",
+          "web_search"
+        ]
+      }
     }
   ]
 }

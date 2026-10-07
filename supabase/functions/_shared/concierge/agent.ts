@@ -35,7 +35,7 @@ const client = () => (anthropic ??= new Anthropic({ apiKey: requireEnv("ANTHROPI
 
 /** אוסף את כל מה שנכנס ל-<context>. */
 export async function loadContext(userText: string, now: Date, excludeMessageId?: number): Promise<ContextInput> {
-  const [profile, projects, tasks, recent, memories] = await Promise.all([
+  const [profile, projects, tasks, recent, memories, work] = await Promise.all([
     db().from("core_profile").select("content").eq("approved", true).order("version", { ascending: false })
       .limit(1).maybeSingle(),
     db().from("projects").select("name, aliases").in("status", ["active", "paused"]).order("name"),
@@ -50,8 +50,11 @@ export async function loadContext(userText: string, now: Date, excludeMessageId?
       console.error("context recall failed", e);
       return [] as RecalledChunk[];
     }),
+    db().from("episodes").select("summary, last_activity_at, projects(name)").eq("kind", "work_session")
+      .not("summary", "is", null).gte("last_activity_at", new Date(now.getTime() - 72 * 3600_000).toISOString())
+      .order("last_activity_at", { ascending: false }).limit(4),
   ]);
-  for (const r of [profile, projects, tasks, recent]) if (r.error) throw r.error;
+  for (const r of [profile, projects, tasks, recent, work]) if (r.error) throw r.error;
 
   const recentRows = (recent.data ?? []).filter((m) => m.id !== excludeMessageId).slice(0, RECENT_MESSAGES)
     .reverse();
@@ -76,6 +79,12 @@ export async function loadContext(userText: string, now: Date, excludeMessageId?
       urgency: t.urgency,
     })),
     memories: memories.filter((m) => !recentTexts.has(m.content)),
+    // deno-lint-ignore no-explicit-any
+    recentWork: (work.data ?? []).map((w: any) => ({
+      project: w.projects?.name ?? null,
+      at: formatLocalIso(new Date(w.last_activity_at)).replace("T", " "),
+      summary: w.summary,
+    })),
     recent: recentRows.map((m) => ({
       at: formatLocalIso(new Date(m.created_at)).replace("T", " "),
       who: m.role === "user" ? "מירי" as const : "סוכן" as const,

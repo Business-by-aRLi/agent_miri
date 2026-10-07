@@ -417,3 +417,7 @@ enabled = true
 [functions.telegram-webhook]
 # טלגרם לא שולח JWT של Supabase; האימות נעשה עם X-Telegram-Bot-Api-Secret-Token
 verify_jwt = false
+
+[functions.ingest]
+# נקרא מה-hook במחשב של מירי, עם X-Ingest-Secret (לא JWT)
+verify_jwt = false

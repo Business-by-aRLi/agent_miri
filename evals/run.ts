@@ -61,6 +61,12 @@ function mockTools(): ToolRunner {
         return ok({ tasks: suite.defaults.openTasks });
       case "recall":
         return ok({ results: [] });
+      case "get_project_dossier":
+        return ok({
+          project: { name: resolveProject(input.project) },
+          dossier: { facts: ["מערכת לניהול זמני קידוש"], open_items: ["תיקונים באקסל"] },
+          recent_sessions: [],
+        });
       default:
         return err(`כלי לא מוכר: ${name}`);
     }

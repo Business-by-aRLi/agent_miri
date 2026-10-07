@@ -12,22 +12,45 @@ export interface ChunkInput {
   occurredAt?: Date;
 }
 
-/** שומר יחידת טקסט (אחרי redact). אידמפוטנטי לפי (source, source_ref). embedding מחושב בנפרד. */
-export async function saveChunk(c: ChunkInput): Promise<void> {
+/**
+ * שומר יחידת טקסט (אחרי redact). אידמפוטנטי לפי (source, source_ref). embedding מחושב בנפרד.
+ * replace: לתוכן שמתעדכן (סיכום מתגלגל של סשן) — דורס ומאפס את ה-embedding כדי שיחושב מחדש.
+ */
+export async function saveChunk(c: ChunkInput, opts: { replace?: boolean } = {}): Promise<void> {
   const content = redact(c.content).trim();
   if (!content) return;
-  const { error } = await db().from("knowledge_chunks").upsert(
-    {
-      source: c.source,
-      source_ref: c.sourceRef,
-      speaker: c.speaker,
-      content,
-      project_id: c.projectId ?? null,
-      occurred_at: (c.occurredAt ?? new Date()).toISOString(),
-    },
-    { onConflict: "source,source_ref", ignoreDuplicates: true },
-  );
+  const row: Record<string, unknown> = {
+    source: c.source,
+    source_ref: c.sourceRef,
+    speaker: c.speaker,
+    content,
+    project_id: c.projectId ?? null,
+    occurred_at: (c.occurredAt ?? new Date()).toISOString(),
+  };
+  if (opts.replace) row.embedding = null;
+  const { error } = await db().from("knowledge_chunks").upsert(row, {
+    onConflict: "source,source_ref",
+    ignoreDuplicates: !opts.replace,
+  });
   if (error) throw error;
+}
+
+/** מחלק טקסט ארוך לקטעים בגבולות פסקה — embedding של קטע ממוקד מדויק יותר משל מסמך שלם. */
+export function splitForMemory(text: string, max = 1800): string[] {
+  if (text.length <= max) return [text];
+  const out: string[] = [];
+  let cur = "";
+  for (const para of text.split(/\n{2,}/)) {
+    if (cur && (cur.length + para.length + 2) > max) {
+      out.push(cur);
+      cur = "";
+    }
+    if (para.length > max) {
+      for (let i = 0; i < para.length; i += max) out.push(para.slice(i, i + max));
+    } else cur = cur ? `${cur}\n\n${para}` : para;
+  }
+  if (cur) out.push(cur);
+  return out;
 }
 
 /**
