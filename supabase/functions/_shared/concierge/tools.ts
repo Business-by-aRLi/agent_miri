@@ -2,7 +2,8 @@
 // כל כלי מחזיר אובייקט JSON. שגיאת קלט → ToolError עם הסבר שה-LLM יכול לתקן לפיו.
 import type Anthropic from "npm:@anthropic-ai/sdk@0";
 import { db } from "../db.ts";
-import { recall } from "../memory/store.ts";
+import { recall, saveChunk } from "../memory/store.ts";
+import { mergeDossier } from "../work/summarize.ts";
 import { formatLocalIso, localToUtc } from "../time.ts";
 
 export class ToolError extends Error {}
@@ -33,7 +34,7 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: "update_task",
     description:
-      "מעדכן משימה קיימת. לשלוח רק את השדות שמשתנים. due: null מוחק מועד. status 'snoozed' = נדחה, 'dropped' = ויתור.",
+      "מעדכן משימה קיימת — גם משימה שכבר בוצעה (למשל להוסיף notes). לשלוח רק את השדות שמשתנים. due: null מוחק מועד. status 'snoozed' = נדחה, 'dropped' = ויתור.",
     input_schema: {
       type: "object",
       properties: {
@@ -86,6 +87,27 @@ export const TOOLS: Anthropic.Tool[] = [
       type: "object",
       properties: { project: { type: "string", description: "שם או כינוי של הפרויקט" } },
       required: ["project"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "add_project_note",
+    description:
+      "שומר מידע בתיק של פרויקט: הצעת מחיר ששלחה, מחיר שסוכם, החלטה, מה הלקוח ביקש, צעד הבא. " +
+      "להשתמש בכל פעם שמירי משתפת מידע ששייך לפרויקט — כך הוא יימצא בתיק ולא רק בחיפוש כללי. " +
+      "לכתוב את התוכן המלא והמדויק (מספרים, סכומים, תאריכים), לא תקציר.",
+    input_schema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "שם או כינוי של הפרויקט" },
+        kind: {
+          type: "string",
+          enum: ["fact", "decision", "open_item", "done"],
+          description: "fact = מידע קבוע (מחירים, לקוח, דרישות); decision = החלטה; open_item = מה נשאר/מחכים לו; done = מה הושלם",
+        },
+        text: { type: "string" },
+      },
+      required: ["project", "kind", "text"],
       additionalProperties: false,
     },
   },
@@ -287,6 +309,34 @@ const handlers: Record<string, (input: Input) => Promise<unknown>> = {
         ? "עוד אין מידע — התיק מתמלא מסשנים ב-Claude Code מ-7.10.2026 והלאה."
         : undefined,
     };
+  },
+
+  async add_project_note(i) {
+    const id = await projectIdByName(i.project);
+    if (!id) throw new ToolError("project חסר");
+    const text = String(i.text ?? "").trim();
+    if (!text) throw new ToolError("text חסר");
+    const field = ({ fact: "facts", decision: "decisions", open_item: "open_items", done: "done" } as const)[
+      i.kind as "fact" | "decision" | "open_item" | "done"
+    ];
+    if (!field) throw new ToolError("kind חייב fact / decision / open_item / done");
+    const dated = `${formatLocalIso(new Date()).slice(0, 10)}: ${text}`;
+    await mergeDossier(id, {
+      facts: field === "facts" ? [dated] : [],
+      decisions: field === "decisions" ? [dated] : [],
+      open_items: field === "open_items" ? [dated] : [],
+      done: field === "done" ? [dated] : [],
+      resolved_items: [],
+    });
+    // גם לזיכרון, מתויג לפרויקט — כדי ש-recall מסונן לפרויקט ימצא את זה
+    await saveChunk({
+      source: "telegram",
+      sourceRef: `note:${crypto.randomUUID()}`,
+      speaker: "miri",
+      content: `[${i.kind}] ${text}`,
+      projectId: id,
+    });
+    return { ok: true, saved_to: field };
   },
 
   async recall(i) {

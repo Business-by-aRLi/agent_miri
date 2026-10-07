@@ -58,6 +58,7 @@ async function handle(msg: TgMessage): Promise<void> {
 
     const replyId = await saveMessage("assistant", { text: result.reply, tools: result.toolNames }, result.runId);
     await saveChunk({ source: "telegram", sourceRef: `msg:${replyId}`, speaker: "agent", content: result.reply });
+    await tagConversation(result.toolCalls, [`msg:${userMessageId}`, `msg:${replyId}`]);
   } catch (e) {
     console.error(e);
     await sendText(chatId, "משהו נכשל אצלי ולא טיפלתי בהודעה. אפשר לשלוח שוב בעוד רגע.").catch(() => {});
@@ -80,6 +81,26 @@ async function handleCommand(chatId: number, text: string): Promise<void> {
     default:
       await sendText(chatId, `פקודה לא מוכרת: ${command}\n\n${HELP_TEXT}`);
   }
+}
+
+/**
+ * תיוג אוטומטי: אם כל הכלים בתור הזה עסקו בפרויקט אחד — ההודעה והתשובה שייכות אליו.
+ * למה רק כשיש פרויקט יחיד: הודעה שנגעה בשני פרויקטים לא שייכת לאף אחד מהם במלואה; עדיף בלי תג מאשר תג שגוי.
+ */
+async function tagConversation(calls: Array<{ input: unknown }>, sourceRefs: string[]): Promise<void> {
+  const names = new Set(
+    calls.map((c) => (c.input as { project?: unknown })?.project).filter((p): p is string => typeof p === "string" && !!p),
+  );
+  const ids = new Set<string>();
+  for (const name of names) {
+    const { data } = await db().rpc("find_project", { q: name });
+    if (data?.[0]?.id) ids.add(data[0].id);
+  }
+  if (ids.size !== 1) return;
+  const [projectId] = ids;
+  const { error } = await db().from("knowledge_chunks").update({ project_id: projectId })
+    .eq("source", "telegram").in("source_ref", sourceRefs).is("project_id", null);
+  if (error) console.error("tagConversation failed", error);
 }
 
 async function saveMessage(role: "user" | "assistant", content: Record<string, unknown>, runId?: string) {

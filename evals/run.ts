@@ -61,6 +61,8 @@ function mockTools(): ToolRunner {
         return ok({ tasks: suite.defaults.openTasks });
       case "recall":
         return ok({ results: [] });
+      case "add_project_note":
+        return ok({ saved_to: input.kind });
       case "get_project_dossier":
         return ok({
           project: { name: resolveProject(input.project) },

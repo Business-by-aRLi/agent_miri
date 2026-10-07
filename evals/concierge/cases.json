@@ -542,6 +542,23 @@
           "web_search"
         ]
       }
+    },
+    {
+      "id": "project-note-offer",
+      "message": "שלחתי עכשיו לליאור את ההצעה: הקמה 3,000 ₪ במקום 5,500, וחודשי 300 ₪ עד 1,500 פניות. תשמור את זה אצלך",
+      "expect": {
+        "calls": [
+          {
+            "tool": "add_project_note",
+            "match": {
+              "project": "CRM Chatbot - Lior"
+            }
+          }
+        ],
+        "forbid": [
+          "web_search"
+        ]
+      }
     }
   ]
 }

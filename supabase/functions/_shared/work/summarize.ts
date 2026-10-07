@@ -164,7 +164,7 @@ export async function summarizeSession(sessionId: string): Promise<void> {
 export async function mergeDossier(
   projectId: string,
   u: Required<Omit<Dossier, "last_session_summary">> & { resolved_items: string[] },
-  sessionSummary: string,
+  sessionSummary?: string,
 ): Promise<void> {
   const { data } = await db().from("projects").select("dossier").eq("id", projectId).single();
   const d = (data?.dossier ?? {}) as Dossier;
@@ -176,7 +176,7 @@ export async function mergeDossier(
     decisions: add(d.decisions, u.decisions, 30),
     done: add(d.done, u.done, 30),
     open_items: add((d.open_items ?? []).filter((x) => !resolved.has(x)), u.open_items, 20),
-    last_session_summary: sessionSummary,
+    last_session_summary: sessionSummary ?? d.last_session_summary,
   };
   const { error } = await db().from("projects").update({ dossier: next, dossier_updated_at: new Date().toISOString() })
     .eq("id", projectId);
