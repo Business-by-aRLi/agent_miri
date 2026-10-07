@@ -18,6 +18,10 @@ begin
   select count(*) into n from public.recall_chunks(array_fill(0.1::real, array[1024])::extensions.vector, 'WigPro', 5);
   if n <> 3 then raise exception 'recall count expected 3, got %', n; end if;
 
+  -- recall בלי embedding (Voyage לא זמין) → טקסטואלי בלבד
+  select count(*) into n from public.recall_chunks(null, 'WigPro', 5);
+  if n <> 2 then raise exception 'lexical-only expected 2, got %', n; end if;
+
   -- אילוצים
   begin
     insert into public.tasks (title, category, importance) values ('x', 'work', 5);
