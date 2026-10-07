@@ -26,7 +26,7 @@ export async function loadContext(userText: string, now: Date, excludeMessageId?
   const [profile, projects, tasks, recent, memories] = await Promise.all([
     db().from("core_profile").select("content").eq("approved", true).order("version", { ascending: false })
       .limit(1).maybeSingle(),
-    db().from("projects").select("name").in("status", ["active", "paused"]).order("name"),
+    db().from("projects").select("name, aliases").in("status", ["active", "paused"]).order("name"),
     db().from("tasks")
       .select("id, title, category, status, importance, urgency, due_at, projects(name)")
       .not("status", "in", "(done,dropped)")
@@ -49,7 +49,9 @@ export async function loadContext(userText: string, now: Date, excludeMessageId?
   return {
     time: timeContext(now),
     profile: profile.data?.content ?? null,
-    projects: (projects.data ?? []).map((p) => p.name),
+    projects: (projects.data ?? []).map((p) =>
+      p.aliases?.length ? `${p.name} (${(p.aliases as string[]).join(", ")})` : p.name
+    ),
     // deno-lint-ignore no-explicit-any
     openTasks: (tasks.data ?? []).map((t: any) => ({
       id: t.id,

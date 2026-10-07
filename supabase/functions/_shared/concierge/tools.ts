@@ -109,7 +109,8 @@ function parseDue(v: unknown): string | null {
 
 async function projectIdByName(name: unknown): Promise<string | null> {
   if (name === null || name === undefined || name === "") return null;
-  const { data, error } = await db().from("projects").select("id, name").ilike("name", String(name)).limit(1);
+  // התאמה לפי שם או כינוי ("high five" → High Five Vacations); מדויקת קודם, אחר כך הכלה
+  const { data, error } = await db().rpc("find_project", { q: String(name) });
   if (error) throw error;
   if (!data?.length) {
     const { data: all } = await db().from("projects").select("name");
