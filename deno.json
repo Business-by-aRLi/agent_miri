@@ -1,0 +1,12 @@
+{
+  "tasks": {
+    "test": "deno test supabase/functions/",
+    "check": "deno check supabase/functions/**/*.ts"
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1"
+  },
+  "fmt": {
+    "lineWidth": 110
+  }
+}
