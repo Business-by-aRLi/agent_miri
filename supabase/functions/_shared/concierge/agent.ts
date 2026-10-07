@@ -78,10 +78,21 @@ export interface ConciergeResult {
   runId: string;
 }
 
-export async function runConcierge(
-  userText: string,
-  opts: { now?: Date; trigger?: string; excludeMessageId?: number; contextOverride?: ContextInput } = {},
-): Promise<ConciergeResult> {
+export type ToolRunner = (name: string, input: Record<string, unknown>) => Promise<{ content: string; isError: boolean }>;
+
+export interface RunOptions {
+  now?: Date;
+  trigger?: string;
+  excludeMessageId?: number;
+  /** evals: הקשר קבוע במקום טעינה מה-DB */
+  contextOverride?: ContextInput;
+  /** evals: כלים מדומים — בלי כתיבה למשימות אמיתיות */
+  toolRunner?: ToolRunner;
+  /** evals: לא לרשום ב-runs */
+  persist?: boolean;
+}
+
+export async function runConcierge(userText: string, opts: RunOptions = {}): Promise<ConciergeResult & { toolCalls: Array<{ name: string; input: unknown }>; costUsd: number }> {
   const now = opts.now ?? new Date();
   const trace = new RunTrace("concierge", opts.trigger ?? "telegram");
   try {
@@ -131,7 +142,7 @@ export async function runConcierge(
       // כל קריאות הכלים מתבצעות במקביל, וכל התוצאות חוזרות בהודעה אחת
       const toolUses = response.content.filter((b) => b.type === "tool_use") as Anthropic.Beta.BetaToolUseBlock[];
       const results = await Promise.all(toolUses.map(async (tu) => {
-        const r = await runTool(tu.name, tu.input as Record<string, unknown>);
+        const r = await (opts.toolRunner ?? runTool)(tu.name, tu.input as Record<string, unknown>);
         trace.addToolCall(tu.name, tu.input, !r.isError);
         return {
           type: "tool_result" as const,
@@ -145,10 +156,10 @@ export async function runConcierge(
       if (i === MAX_ITERATIONS - 1) reply = text || "הגעתי למגבלת הצעדים. כדאי לבדוק עם /today מה נשמר.";
     }
 
-    await trace.save();
-    return { reply, toolNames: trace.toolNames, runId: trace.id };
+    if (opts.persist !== false) await trace.save();
+    return { reply, toolNames: trace.toolNames, runId: trace.id, toolCalls: trace.calls, costUsd: trace.cost };
   } catch (e) {
-    await trace.save(e);
+    if (opts.persist !== false) await trace.save(e);
     throw e;
   }
 }

@@ -47,6 +47,14 @@ export class RunTrace {
     this.toolCalls.push({ name, input, ok });
   }
 
+  get calls() {
+    return this.toolCalls.map(({ name, input }) => ({ name, input }));
+  }
+
+  get cost() {
+    return this.totals.cost;
+  }
+
   get toolNames() {
     return this.toolCalls.map((t) => t.name);
   }

@@ -282,6 +282,8 @@ approval שלא נענה תוך 24 שעות → `expired`, ה-job מושהה.
 | 5 | Executor + סקילים + Brain MCP | job מטלגרם → session → approval בכפתור → תוצר; Executor קורא מהמוח דרך MCP; הצעת מחיר מתוך תיק פרויקט; 3 סקילים ראשונים פעילים; trust ladder; budget + `/stop` |
 | 6 | Skill Factory | סקיל נולד מריצה ועובר evals; Brain MCP מחובר ל-Claude Code במחשב (קריאה+עדכון משימות) |
 
+**סטטוס (2026-10-07):** שלב 1 ✅ — קליטה עובדת בטלגרם, 20/20 evals (`deno task eval`), dedupe וסינון זרים נבדקו מול הפונקציה החיה. הבא: 1.5.
+
 כל שלב שמיש בפני עצמו. **לא מתחילים שלב לפני שהקודם עומד בקריטריונים.**
 
 ## שאלות פתוחות
@@ -293,6 +295,9 @@ approval שלא נענה תוך 24 שעות → `expired`, ה-job מושהה.
 ---
 
 ## כללי עבודה ל-Claude Code בריפו הזה
+- **אין Docker במחשב של מירי** → במקום `supabase db reset`: בדיקת מיגרציה בטרנזקציה עם rollback מול הפרויקט (`supabase/tests/`), ורק אז apply. שם קובץ המיגרציה = הגרסה שנרשמה ב-`schema_migrations`.
+- **לפני פריסה של שינוי בפרומפט/כלים:** `deno task test` + `deno task eval` — ירידה מ-20/20 = לא פורסים.
+- **פריסה:** `npx supabase functions deploy telegram-webhook --project-ref nklintfbsfagcwlbfwob --use-api`.
 - **ארכיטקטורה לפני קוד** (לפי arli-architect): לכל פיצ'ר — הצגת תוכנית קצרה, המתנה לאישור, ואז קוד.
 - צ'אנקים קטנים. אחרי כל צ'אנק: מה נבנה, מה הבא.
 - הערות בקוד בעברית, קצרות, עם ה"למה".
