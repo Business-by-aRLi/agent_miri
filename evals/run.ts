@@ -68,6 +68,15 @@ function mockTools(): ToolRunner {
         return ids.has(String(input.task_id)) ? ok({ task: { id: input.task_id, ...input } }) : err("משימה לא נמצאה");
       case "list_tasks":
         return ok({ tasks: suite.defaults.openTasks });
+      case "schedule_task":
+        if (!ids.has(String(input.task_id)) && !created.has(String(input.task_id))) return err("משימה לא נמצאה");
+        return ok({ scheduled: "מחר 09:00–10:00", start: input.start ?? "2026-10-08T09:00", rescheduled: false });
+      case "find_free_slots":
+        return ok({ slots: [{ label: "מחר 09:00–10:00" }, { label: "ראשון 11.10 09:00–10:00" }] });
+      case "unschedule_task":
+        return ok({});
+      case "get_agenda":
+        return ok({ events: [{ what: "פגישה עם רואה חשבון", start: "2026-10-08T11:00", end: "2026-10-08T12:00" }] });
       case "recall":
         return ok({ results: [] });
       case "set_reminder":

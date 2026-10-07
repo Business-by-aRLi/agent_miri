@@ -429,3 +429,7 @@ verify_jwt = false
 [functions.memory-worker]
 # נקרא מ-pg_cron עם X-Dispatcher-Secret (נבדק מול Vault)
 verify_jwt = false
+
+[functions.google-oauth]
+# Google מפנה לכאן דפדפן רגיל (בלי JWT). ההגנה: state חד-פעמי שנוצר רק מ-/calendar בטלגרם
+verify_jwt = false

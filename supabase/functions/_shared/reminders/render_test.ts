@@ -1,6 +1,15 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { formatLocalIso, localToUtc } from "../time.ts";
-import { type DueReminder, eveningFollowupAt, parseCallback, renderBatch, renderOne, snoozeTarget } from "./render.ts";
+import {
+  type DueReminder,
+  eveningFollowupAt,
+  parseCallback,
+  parseSlotCallback,
+  renderBatch,
+  renderOne,
+  slotCallback,
+  snoozeTarget,
+} from "./render.ts";
 
 const ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const now = localToUtc("2026-10-07T15:30"); // רביעי
@@ -73,4 +82,20 @@ Deno.test("eveningFollowupAt: רק אם נשארה לפחות חצי שעה עד
   assertEquals(formatLocalIso(eveningFollowupAt(now)!), "2026-10-07T20:00");
   assertEquals(eveningFollowupAt(localToUtc("2026-10-07T19:45")), null);
   assertEquals(eveningFollowupAt(localToUtc("2026-10-07T21:00")), null);
+});
+
+Deno.test("slot callback: הלוך-חזור ובתוך 64 בתים", () => {
+  const start = localToUtc("2026-10-11T09:15");
+  const data = slotCallback(ID, start);
+  assertEquals(new TextEncoder().encode(data).length <= 64, true);
+  assertEquals(parseSlotCallback(data)?.start.toISOString(), start.toISOString());
+  assertEquals(parseSlotCallback(data)?.taskId, ID);
+  assertEquals(parseSlotCallback("slot:x:1"), null);
+});
+
+Deno.test("followup עם יומן מחובר: כפתור לשבץ ביומן", () => {
+  const r = renderOne({ id: ID, kind: "followup", text: null, task: task() }, now, { calendar: true });
+  assertEquals(r.keyboard.flat().some((b) => b.callback_data === `resched:${ID}`), true);
+  const noCal = renderOne({ id: ID, kind: "followup", text: null, task: task() }, now);
+  assertEquals(noCal.keyboard.flat().some((b) => b.callback_data.startsWith("resched")), false);
 });

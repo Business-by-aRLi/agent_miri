@@ -2,7 +2,7 @@
 // סדר הפעולות: אימות → dedupe → 200 מיד → עיבוד ברקע.
 // למה 200 מיד: טלגרם שולח שוב כל עדכון שלא אושר תוך זמן קצר, ותשובת LLM לוקחת שניות.
 import { runConcierge } from "../_shared/concierge/agent.ts";
-import { HELP_TEXT, memoryText, todayText } from "../_shared/commands.ts";
+import { calendarConnectText, HELP_TEXT, memoryText, todayText } from "../_shared/commands.ts";
 import { db, requireEnv } from "../_shared/db.ts";
 import { miriChatId, sendText, sendTyping, type TgMessage, type TgUpdate } from "../_shared/channels/telegram.ts";
 import { embedPending, saveChunk } from "../_shared/memory/store.ts";
@@ -83,6 +83,9 @@ async function handleCommand(chatId: number, text: string): Promise<void> {
       return;
     case "/memory":
       await sendText(chatId, await memoryText());
+      return;
+    case "/calendar":
+      await sendText(chatId, await calendarConnectText());
       return;
     case "/start":
     case "/help":

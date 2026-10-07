@@ -3,7 +3,7 @@ import type { Keyboard } from "../channels/telegram.ts";
 import { formatLocalIso, localToUtc, toLocalParts } from "../time.ts";
 
 export type ReminderKind = "reminder" | "followup" | "followup_evening" | "nudge" | "question";
-export type Action = "done" | "snz1h" | "snzTom" | "snzWeek" | "drop" | "ack";
+export type Action = "done" | "snz1h" | "snzTom" | "snzWeek" | "drop" | "ack" | "resched";
 
 export interface DueReminder {
   id: string;
@@ -26,8 +26,18 @@ const btn = (text: string, action: Action, id: string) => ({ text, callback_data
 
 /** callback_data → פעולה + מזהה תזכורת. null = לא שלנו / פגום. */
 export function parseCallback(data: string | undefined): { action: Action; reminderId: string } | null {
-  const m = data?.match(/^(done|snz1h|snzTom|snzWeek|drop|ack):([0-9a-f-]{36})$/);
+  const m = data?.match(/^(done|snz1h|snzTom|snzWeek|drop|ack|resched):([0-9a-f-]{36})$/);
   return m ? { action: m[1] as Action, reminderId: m[2] } : null;
+}
+
+/** כפתור בחירת חור: "slot:<task>:<דקות מאז 1970>" — 51 בתים, בתוך מגבלת 64. */
+export function slotCallback(taskId: string, start: Date): string {
+  return `slot:${taskId}:${Math.round(start.getTime() / 60_000)}`;
+}
+
+export function parseSlotCallback(data: string | undefined): { taskId: string; start: Date } | null {
+  const m = data?.match(/^slot:([0-9a-f-]{36}):(\d{8})$/);
+  return m ? { taskId: m[1], start: new Date(Number(m[2]) * 60_000) } : null;
 }
 
 const hhmm = (iso: string) => formatLocalIso(new Date(iso)).slice(11);
@@ -39,7 +49,7 @@ const dueLabel = (iso: string, now: Date) => {
 };
 
 /** הודעה + כפתורים לתזכורת בודדת. */
-export function renderOne(r: DueReminder, now: Date): { text: string; keyboard: Keyboard } {
+export function renderOne(r: DueReminder, now: Date, opts: { calendar?: boolean } = {}): { text: string; keyboard: Keyboard } {
   const t = r.task;
   const tag = t?.project ? ` (${t.project})` : "";
 
@@ -66,13 +76,13 @@ export function renderOne(r: DueReminder, now: Date): { text: string; keyboard: 
   const text = r.kind === "followup_evening"
     ? `🌙 עוד פתוח מהיום: ${t.title}${tag}. סוגרים או מזיזים?`
     : `🔔 ${t.title}${tag}${t.due_at ? ` — היה אמור להיות ${dueLabel(t.due_at, now)}` : ""}. איך זה הלך?`;
-  return {
-    text,
-    keyboard: [
-      [btn("✅ בוצע", "done", r.id), btn("⏰ עוד שעה", "snz1h", r.id)],
-      [btn("📅 מחר", "snzTom", r.id), btn("🗓 שבוע הבא", "snzWeek", r.id)],
-    ],
-  };
+  const keyboard: Keyboard = [
+    [btn("✅ בוצע", "done", r.id), btn("⏰ עוד שעה", "snz1h", r.id)],
+    [btn("📅 מחר", "snzTom", r.id), btn("🗓 שבוע הבא", "snzWeek", r.id)],
+  ];
+  // יומן מחובר → אפשר לבחור חור פנוי במקום "מחר" עיוור
+  if (opts.calendar) keyboard.push([btn("🗓 לשבץ ביומן", "resched", r.id)]);
+  return { text, keyboard };
 }
 
 /**
@@ -123,6 +133,8 @@ export function actionLabel(action: Action, target?: Date): string {
       return "🗑 ירד מהרשימה";
     case "ack":
       return "👍";
+    case "resched":
+      return "🗓 בוחרים זמן";
     default:
       return `⏰ נדחה ל-${target ? hhmmDay(target) : ""}`;
   }

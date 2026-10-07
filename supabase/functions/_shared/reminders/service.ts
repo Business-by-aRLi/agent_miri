@@ -3,12 +3,15 @@ import { answerCallback, editMessage, miriChatId, sendWithKeyboard, type TgUpdat
 import { db } from "../db.ts";
 import { loadQuietWindows } from "../hebcal.ts";
 import { nextSendTime } from "../time.ts";
+import { scheduleTask, ScheduleError, slotLabel, suggestSlots, unscheduleTask } from "../schedule.ts";
 import {
   type Action,
   actionLabel,
   type DueReminder,
   eveningFollowupAt,
   parseCallback,
+  parseSlotCallback,
+  slotCallback,
   type ReminderKind,
   renderBatch,
   renderOne,
@@ -37,9 +40,10 @@ export async function dispatchDue(now: Date): Promise<{ sent: number; deferred: 
 
   const [windows, { data: settings }] = await Promise.all([
     loadQuietWindows(now),
-    db().from("settings").select("talk_hours").single(),
+    db().from("settings").select("talk_hours, gcal_connected_at").single(),
   ]);
   const talk = settings?.talk_hours as { start: string; end: string } | undefined;
+  const calendar = !!settings?.gcal_connected_at;
 
   const taskIds = [...new Set(rows.map((r) => r.task_id).filter(Boolean))] as string[];
   const { data: tasks } = taskIds.length
@@ -78,7 +82,7 @@ export async function dispatchDue(now: Date): Promise<{ sent: number; deferred: 
   const chat = miriChatId();
   const groups = toSend.length >= 3 ? [toSend] : toSend.map((r) => [r]);
   for (const group of groups) {
-    const { text, keyboard } = group.length === 1 ? renderOne(group[0], now) : renderBatch(group, now);
+    const { text, keyboard } = group.length === 1 ? renderOne(group[0], now, { calendar }) : renderBatch(group, now);
     try {
       const messageId = await sendWithKeyboard(chat, text, keyboard);
       await db().from("reminders").update({ status: "sent", sent_at: now.toISOString(), telegram_message_id: messageId })
@@ -115,6 +119,8 @@ async function logAssistant(text: string) {
 
 /** לחיצה על כפתור. מחזיר true אם טופל (שלנו). */
 export async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>): Promise<boolean> {
+  const slot = parseSlotCallback(cb.data);
+  if (slot) return await handleSlotChoice(cb, slot.taskId, slot.start);
   const parsed = parseCallback(cb.data);
   if (!parsed || !cb.message) return false;
   const { action, reminderId } = parsed;
@@ -147,10 +153,16 @@ export async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>
     await db().from("tasks").update({ status: "done", completed_at: now.toISOString() }).eq("id", task.id);
     await answerCallback(cb.id, "יש! ✅");
   } else if (action === "drop" && task) {
+    // קודם מהיומן (אם שובצה), אחר כך הסטטוס — כך שלא נשאר אירוע יתום ביומן "משימות"
+    await unscheduleTask(task.id).catch((e) => console.error("unschedule on drop failed", e));
     await db().from("tasks").update({ status: "dropped" }).eq("id", task.id);
     await answerCallback(cb.id, "ירד מהרשימה");
   } else if (action === "ack") {
     await answerCallback(cb.id, "👍");
+  } else if (action === "resched" && task) {
+    await answerCallback(cb.id, "מחפש חורים פנויים…");
+    await offerSlots(cb, task.id, task.title);
+    return true;
   } else if (action === "snz1h" || action === "snzTom" || action === "snzWeek") {
     target = snoozeTarget(action, now, task?.category ?? "personal");
     if (task && r.kind !== "reminder") {
@@ -197,4 +209,49 @@ async function updateMessageAfterAction(
   const remaining = rows.filter((row) => !row.some((b) => b.callback_data.endsWith(reminderId)));
   const n = rows.findIndex((row) => row.some((b) => b.callback_data.endsWith(reminderId))) + 1;
   await editMessage(msg.chat.id, msg.message_id, `${msg.text ?? ""}\n${n}: ${label}`, remaining);
+}
+
+/** מחליף את הכפתורים בהודעה ב-3 חורים פנויים לבחירה. */
+async function offerSlots(cb: NonNullable<TgUpdate["callback_query"]>, taskId: string, title: string) {
+  const msg = cb.message!;
+  try {
+    const slots = await suggestSlots(taskId, { count: 3 });
+    if (!slots.length) {
+      await editMessage(
+        msg.chat.id,
+        msg.message_id,
+        `${msg.text ?? ""}\n\n🗓 לא מצאתי חור פנוי ב-3 השבועות הקרובים. כתבי לי מתי נוח ואשבץ.`,
+      );
+      return;
+    }
+    await editMessage(
+      msg.chat.id,
+      msg.message_id,
+      `${msg.text ?? ""}\n\n🗓 מתי לשבץ את "${title}"?`,
+      slots.map((s) => [{ text: `${slotLabel(s)}${s.lateForDue ? " ⚠️" : ""}`, callback_data: slotCallback(taskId, s.start) }]),
+    );
+  } catch (e) {
+    console.error("offerSlots failed", e);
+    await editMessage(
+      msg.chat.id,
+      msg.message_id,
+      `${msg.text ?? ""}\n\n⚠️ לא הצלחתי לקרוא את היומן. אפשר לבקש ממני לשבץ בהודעה.`,
+    );
+  }
+}
+
+async function handleSlotChoice(cb: NonNullable<TgUpdate["callback_query"]>, taskId: string, start: Date): Promise<boolean> {
+  const msg = cb.message!;
+  try {
+    const r = await scheduleTask(taskId, start);
+    await answerCallback(cb.id, "שובץ ✅");
+    const base = (msg.text ?? "").split("\n\n🗓")[0];
+    await editMessage(msg.chat.id, msg.message_id, `${base}\n\n📅 שובץ: ${slotLabel(r)}`);
+    await db().from("messages").insert({ role: "user", content: { text: `[כפתור] שבצתי ל-${slotLabel(r)}`, kind: "button" } });
+  } catch (e) {
+    const reason = e instanceof ScheduleError ? e.message : "תקלה";
+    if (!(e instanceof ScheduleError)) console.error("slot choice failed", e);
+    await answerCallback(cb.id, `לא הצלחתי: ${reason}`.slice(0, 190));
+  }
+  return true;
 }
