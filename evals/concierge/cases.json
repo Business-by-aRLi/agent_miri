@@ -100,6 +100,18 @@
         "importance": 2,
         "urgency": 1
       }
+    ],
+    "facts": [
+      {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "subject": "מירי",
+        "content": "רוצה להגיע לבריכה לפחות פעמיים בשבוע"
+      },
+      {
+        "id": "66666666-6666-4666-8666-666666666666",
+        "subject": "ליאור",
+        "content": "לקוח — צ'אטבוט CRM בוואטסאפ למערכת הפצה"
+      }
     ]
   },
   "cases": [
@@ -609,6 +621,50 @@
               "at": "2026-10-07T14:00"
             }
           }
+        ]
+      }
+    },
+    {
+      "id": "remember-explicit",
+      "message": "תזכור שאני לא עובדת בימי שישי",
+      "expect": {
+        "calls": [
+          {
+            "tool": "remember"
+          }
+        ],
+        "forbid": [
+          "create_task",
+          "set_reminder"
+        ]
+      }
+    },
+    {
+      "id": "forget-fact",
+      "message": "תשכח את מה שאמרתי על הבריכה, זה כבר לא רלוונטי",
+      "expect": {
+        "calls": [
+          {
+            "tool": "forget",
+            "match": {
+              "memory_id": "55555555-5555-4555-8555-555555555555"
+            }
+          }
+        ],
+        "forbid": [
+          "create_task",
+          "remember"
+        ]
+      }
+    },
+    {
+      "id": "who-is-from-memory",
+      "message": "מי זה ליאור?",
+      "expect": {
+        "forbid": [
+          "create_task",
+          "web_search",
+          "remember"
         ]
       }
     }

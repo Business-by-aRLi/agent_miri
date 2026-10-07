@@ -55,10 +55,38 @@ export async function todayText(now = new Date()): Promise<string> {
   return out.join("\n");
 }
 
+const KIND_LABEL: Record<string, string> = {
+  person: "👤 אנשים",
+  project: "📁 פרויקטים",
+  preference: "💡 העדפות",
+  routine: "🔁 הרגלים",
+  decision: "✅ החלטות",
+  fact: "📌 עוד דברים",
+};
+
+/** /memory — כל מה שהסוכן יודע, מקובץ לפי סוג. שקיפות מלאה. */
+export async function memoryText(): Promise<string> {
+  const { data, error } = await db().from("memories").select("kind, subject, content, origin")
+    .eq("status", "active").order("subject");
+  if (error) throw error;
+  if (!data?.length) return "🧠 עוד לא למדתי עובדות קבועות. זה יתמלא מהשיחות שלנו (פעם בשעה), או כשתגידי לי \"תזכור ש...\".";
+  const out = [`🧠 מה שאני יודע (${data.length})`];
+  for (const [kind, label] of Object.entries(KIND_LABEL)) {
+    const items = data.filter((m) => m.kind === kind);
+    if (!items.length) continue;
+    out.push("", label);
+    for (const m of items) out.push(`• ${m.subject}: ${m.content}${m.origin === "explicit" ? " 📍" : ""}`);
+  }
+  out.push("", "📍 = ביקשת שאזכור. משהו לא נכון? פשוט תגידי \"תשכח ש...\" או תתקני אותי.");
+  return out.join("\n");
+}
+
 export const HELP_TEXT = `אני הסוכן שלך. פשוט לכתוב לי — משימה, רעיון, שאלה — בכל שעה.
 
 פקודות:
 /today — מה על הפרק היום
+/memory — מה אני יודע עלייך
 /help — ההודעה הזו
 
-בקרוב: תזכורות, יומן, הודעות קוליות, וביצוע עבודה בפועל.`;
+אפשר גם: "תזכיר לי מחר ב-10...", "תזכור ש...", "מה סיכמתי עם ליאור?", "עד מתי הספרייה פתוחה?".
+בקרוב: יומן, וביצוע עבודה בפועל.`;

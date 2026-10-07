@@ -425,3 +425,7 @@ verify_jwt = false
 [functions.dispatcher]
 # נקרא מ-pg_cron עם X-Dispatcher-Secret (נבדק מול Vault)
 verify_jwt = false
+
+[functions.memory-worker]
+# נקרא מ-pg_cron עם X-Dispatcher-Secret (נבדק מול Vault)
+verify_jwt = false

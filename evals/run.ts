@@ -23,7 +23,12 @@ interface Case {
   expect: { calls?: ExpectedCall[]; count?: Record<string, number>; forbid?: string[] };
 }
 interface Suite {
-  defaults: { now: string; projects: Project[]; openTasks: ContextInput["openTasks"] };
+  defaults: {
+    now: string;
+    projects: Project[];
+    openTasks: ContextInput["openTasks"];
+    facts?: NonNullable<ContextInput["facts"]>;
+  };
   cases: Case[];
 }
 
@@ -72,6 +77,10 @@ function mockTools(): ToolRunner {
         return ok({ reminders: [] });
       case "cancel_reminder":
         return ok({});
+      case "remember":
+        return ok({ memory_id: crypto.randomUUID() });
+      case "forget":
+        return (suite.defaults.facts ?? []).some((f) => f.id === input.memory_id) ? ok({}) : err("עובדה לא נמצאה");
       case "add_project_note":
         return ok({ saved_to: input.kind });
       case "get_project_dossier":
@@ -132,6 +141,7 @@ async function runCase(c: Case) {
     openTasks: suite.defaults.openTasks,
     memories: [],
     recent: [],
+    facts: suite.defaults.facts ?? [],
   };
   try {
     const r = await runConcierge(c.message, {
