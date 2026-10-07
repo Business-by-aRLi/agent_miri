@@ -84,3 +84,60 @@ Deno.test("timeContext: כל השדות", () => {
   assertEquals(c.timeHe, "09:30");
   assertEquals(c.localIso, "2026-10-07T09:30");
 });
+
+// ---------- שבת וחג (נתונים אמיתיים מ-Hebcal לרמת גן) ----------
+import { buildQuietWindows, nextSendTime, quietWindowAt } from "./time.ts";
+
+const SHABBAT = [
+  { category: "candles", date: "2026-10-09T17:55:00+03:00" },
+  { category: "havdalah", date: "2026-10-10T18:51:00+03:00" },
+];
+// ראש השנה תשפ"ח: שישי-ראשון, שתי הדלקות והבדלה אחת
+const RH_5788 = [
+  { category: "candles", date: "2027-10-01T18:06:00+03:00" },
+  { category: "holiday", date: "2027-10-02" },
+  { category: "candles", date: "2027-10-02T19:01:00+03:00" },
+  { category: "havdalah", date: "2027-10-03T19:00:00+03:00" },
+];
+
+Deno.test("שבת: חלון מחצי שעה לפני הדלקה עד 10 דקות אחרי הבדלה", () => {
+  const [w] = buildQuietWindows(SHABBAT);
+  assertEquals(formatLocalIso(w.start), "2026-10-09T17:25");
+  assertEquals(formatLocalIso(w.end), "2026-10-10T19:01");
+});
+
+Deno.test("חג צמוד לשבת: חלון אחד רציף", () => {
+  const ws = buildQuietWindows(RH_5788);
+  assertEquals(ws.length, 1);
+  assertEquals(formatLocalIso(ws[0].start), "2027-10-01T17:36");
+  assertEquals(formatLocalIso(ws[0].end), "2027-10-03T19:10");
+  // מוצאי שבת, באמצע החג — עדיין שקט
+  assertEquals(quietWindowAt(localToUtc("2027-10-02T21:00"), ws) !== null, true);
+});
+
+Deno.test("הדלקה בלי הבדלה (סוף טווח) — לא נוצר חלון חלקי", () => {
+  assertEquals(buildQuietWindows([{ category: "candles", date: "2026-10-09T17:55:00+03:00" }]).length, 0);
+});
+
+Deno.test("nextSendTime: תזכורת בשבת יוצאת במוצאי שבת", () => {
+  const ws = buildQuietWindows(SHABBAT);
+  assertEquals(formatLocalIso(nextSendTime(localToUtc("2026-10-10T10:00"), ws)), "2026-10-10T19:01");
+  assertEquals(formatLocalIso(nextSendTime(localToUtc("2026-10-09T17:30"), ws)), "2026-10-10T19:01");
+  assertEquals(formatLocalIso(nextSendTime(localToUtc("2026-10-09T17:20"), ws)), "2026-10-09T17:20");
+});
+
+Deno.test("nextSendTime: הודעה יזומה מחוץ לשעות שיחה נדחית לבוקר", () => {
+  const talk = { start: "08:00", end: "22:00" };
+  assertEquals(formatLocalIso(nextSendTime(localToUtc("2026-10-07T23:30"), [], talk)), "2026-10-08T08:00");
+  assertEquals(formatLocalIso(nextSendTime(localToUtc("2026-10-08T06:00"), [], talk)), "2026-10-08T08:00");
+  assertEquals(formatLocalIso(nextSendTime(localToUtc("2026-10-08T13:00"), [], talk)), "2026-10-08T13:00");
+});
+
+Deno.test("nextSendTime: מוצאי שבת אחרי 22:00 + שעות שיחה → ראשון בבוקר", () => {
+  const late = buildQuietWindows([
+    { category: "candles", date: "2026-06-05T19:23:00+03:00" },
+    { category: "havdalah", date: "2026-06-06T21:55:00+03:00" },
+  ]);
+  const t = nextSendTime(localToUtc("2026-06-06T12:00"), late, { start: "08:00", end: "22:00" });
+  assertEquals(formatLocalIso(t), "2026-06-07T08:00");
+});

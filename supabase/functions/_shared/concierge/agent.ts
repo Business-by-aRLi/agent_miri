@@ -35,7 +35,7 @@ const client = () => (anthropic ??= new Anthropic({ apiKey: requireEnv("ANTHROPI
 
 /** אוסף את כל מה שנכנס ל-<context>. */
 export async function loadContext(userText: string, now: Date, excludeMessageId?: number): Promise<ContextInput> {
-  const [profile, projects, tasks, recent, memories, work] = await Promise.all([
+  const [profile, projects, tasks, recent, memories, work, reminders, quiet] = await Promise.all([
     db().from("core_profile").select("content").eq("approved", true).order("version", { ascending: false })
       .limit(1).maybeSingle(),
     db().from("projects").select("name, aliases").in("status", ["active", "paused"]).order("name"),
@@ -53,8 +53,16 @@ export async function loadContext(userText: string, now: Date, excludeMessageId?
     db().from("episodes").select("summary, last_activity_at, projects(name)").eq("kind", "work_session")
       .not("summary", "is", null).gte("last_activity_at", new Date(now.getTime() - 72 * 3600_000).toISOString())
       .order("last_activity_at", { ascending: false }).limit(4),
+    db().from("reminders").select("id, kind, text, send_at, tasks(title)").eq("status", "pending")
+      .order("send_at").limit(10),
+    db().from("quiet_windows").select("start_at, end_at").gt("end_at", now.toISOString())
+      .lt("start_at", new Date(now.getTime() + 48 * 3600_000).toISOString()).order("start_at").limit(1),
   ]);
-  for (const r of [profile, projects, tasks, recent, work]) if (r.error) throw r.error;
+  for (const r of [profile, projects, tasks, recent, work, reminders, quiet]) if (r.error) throw r.error;
+  const dayTime = (iso: string) => {
+    const t = timeContext(new Date(iso));
+    return `${t.weekdayHe} ${t.timeHe}`;
+  };
 
   const recentRows = (recent.data ?? []).filter((m) => m.id !== excludeMessageId).slice(0, RECENT_MESSAGES)
     .reverse();
@@ -79,6 +87,14 @@ export async function loadContext(userText: string, now: Date, excludeMessageId?
       urgency: t.urgency,
     })),
     memories: memories.filter((m) => !recentTexts.has(m.content)),
+    // deno-lint-ignore no-explicit-any
+    reminders: (reminders.data ?? []).map((r: any) => ({
+      id: r.id,
+      what: r.tasks?.title ?? r.text ?? "",
+      at: formatLocalIso(new Date(r.send_at)).replace("T", " "),
+      auto: r.kind !== "reminder",
+    })),
+    quiet: quiet.data?.[0] ? { start: dayTime(quiet.data[0].start_at), end: dayTime(quiet.data[0].end_at) } : null,
     // deno-lint-ignore no-explicit-any
     recentWork: (work.data ?? []).map((w: any) => ({
       project: w.projects?.name ?? null,

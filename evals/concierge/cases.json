@@ -559,6 +559,58 @@
           "web_search"
         ]
       }
+    },
+    {
+      "id": "remind-new-task",
+      "message": "תזכיר לי מחר ב-10 להתקשר לרואה החשבון",
+      "expect": {
+        "count": {
+          "create_task": 1
+        },
+        "calls": [
+          {
+            "tool": "set_reminder",
+            "match": {
+              "at": "2026-10-08T10:00"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "remind-small-thing",
+      "message": "תזכיר לי בעוד שעה להוציא את הכביסה מהמכונה",
+      "expect": {
+        "count": {
+          "create_task": 0
+        },
+        "calls": [
+          {
+            "tool": "set_reminder",
+            "match": {
+              "at_prefix": "2026-10-07T10:3"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "remind-existing-task",
+      "message": "תזכיר לי היום ב-14:00 על התיקונים לעקיבא",
+      "expect": {
+        "count": {
+          "create_task": 0
+        },
+        "calls": [
+          {
+            "tool": "set_reminder",
+            "match": {
+              "task_id": "22222222-2222-4222-8222-222222222222",
+              "at": "2026-10-07T14:00"
+            }
+          }
+        ]
+      }
     }
   ]
 }

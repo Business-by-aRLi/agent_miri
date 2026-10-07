@@ -12,7 +12,15 @@ export const SYSTEM_PROMPT = `זהו הסוכן האישי של מירי בטל�
 - לענות על שאלות לגבי המשימות שלה ולגבי מה שנאמר בעבר (בעזרת recall).
 - לעדכן, לסגור ולשנות משימות לפי בקשתה.
 - לחפש באינטרנט כשצריך מידע עדכני מהעולם (web_search, web_fetch).
+- לקבוע תזכורות (set_reminder). הן יוצאות בזמן עם כפתורי בוצע/דחה.
 עוד אין גישה ליומן, למיילים או לביצוע עבודה בפועל. בקשה כזו — לרשום כמשימה ולציין בקצרה שהיכולת תגיע בהמשך.
+
+## תזכורות ומעקב
+- "תזכיר לי X ב-T": אם X הוא משהו לעשות — create_task (עם due=T) ואז set_reminder עם ה-task_id שחזר. אם זה דבר קטן ("להוציא כביסה") — set_reminder עם text בלבד.
+- "תזכיר לי" בלי שעה: לבחור זמן סביר (עבודה 09:00, אישי 18:00) ולומר מתי נקבע.
+- לכל משימה עם מועד יש **מעקב אוטומטי** חצי שעה אחרי המועד, ושאלה אחת בערב אם לא נסגרה — לא צריך להוסיף לזה תזכורת.
+- בשבת וחג לא נשלח כלום; מה שנופל שם יוצא במוצאי שבת. אם מבקשים תזכורת לשבת — לומר את זה.
+- אחרי תזכורת, "עשיתי"/"סיימתי"/"בוצע" מתייחס למשימה שהוזכרה בהודעה האחרונה בשיחה.
 
 ## חיפוש באינטרנט
 - מתי: שעות פתיחה, כתובות וטלפונים, מוצרים ומחירים, מזג אוויר, חדשות, "כמה עולה", "איפה קונים", "מה זה X" — כל מה שתלוי במציאות של היום. לא לנחש מהזיכרון הפנימי; לחפש.
@@ -78,6 +86,10 @@ export interface ContextInput {
   recent: Array<{ at: string; who: "מירי" | "סוכן"; text: string }>;
   /** סשני עבודה אחרונים ב-Claude Code (72 שעות) — כדי לדעת על מה מירי עובדת בלי לשאול */
   recentWork?: Array<{ project: string | null; at: string; summary: string }>;
+  /** תזכורות שממתינות (הקרובות) */
+  reminders?: Array<{ id: string; what: string; at: string; auto: boolean }>;
+  /** שבת/חג הקרובים, אם בטווח של יומיים */
+  quiet?: { start: string; end: string } | null;
 }
 
 export function buildContext(c: ContextInput): string {
@@ -85,6 +97,7 @@ export function buildContext(c: ContextInput): string {
   lines.push(
     `עכשיו: יום ${c.time.weekdayHe}, ${c.time.gregorianHe} · ${c.time.hebrewDate} · ${c.time.timeHe} (${c.time.localIso}, שעון ישראל)`,
   );
+  if (c.quiet) lines.push(`שבת/חג: נכנס ${c.quiet.start}, יוצא ${c.quiet.end} (בזמן הזה לא נשלחות הודעות)`);
   lines.push("", "## פרופיל", c.profile ?? "(עוד ריק)");
   lines.push("", "## פרויקטים ידועים", c.projects.length ? c.projects.join(", ") : "(אין עדיין)");
 
@@ -95,6 +108,11 @@ export function buildContext(c: ContextInput): string {
     if (t.due_local) parts.push(`עד ${t.due_local}`);
     parts.push(`חשיבות ${t.importance} דחיפות ${t.urgency}`, t.status);
     lines.push(`- [${t.id}] ${t.title} · ${parts.join(" · ")}`);
+  }
+
+  if (c.reminders?.length) {
+    lines.push("", "## תזכורות שממתינות");
+    for (const r of c.reminders) lines.push(`- [${r.id}] ${r.at} · ${r.what}${r.auto ? " (מעקב אוטומטי)" : ""}`);
   }
 
   if (c.memories.length) {

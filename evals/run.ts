@@ -45,6 +45,7 @@ function resolveProject(q: unknown): string | null | undefined {
 /** כלים מדומים: מחזירים תשובות סבירות, לא נוגעים בשום דבר. */
 function mockTools(): ToolRunner {
   const ids = new Set(suite.defaults.openTasks.map((t) => t.id));
+  const created = new Set<string>();
   return (name, input) => {
     const ok = (o: unknown) => Promise.resolve({ content: JSON.stringify({ ok: true, ...o as object }), isError: false });
     const err = (m: string) => Promise.resolve({ content: JSON.stringify({ error: m }), isError: true });
@@ -52,8 +53,11 @@ function mockTools(): ToolRunner {
       return err(`פרויקט "${input.project}" לא קיים. להשתמש ב-null ולרשום את השם ב-notes.`);
     }
     switch (name) {
-      case "create_task":
-        return ok({ task: { id: crypto.randomUUID(), ...input, status: "inbox" } });
+      case "create_task": {
+        const id = crypto.randomUUID();
+        created.add(id);
+        return ok({ task: { id, ...input, status: "inbox" } });
+      }
       case "update_task":
       case "complete_task":
         return ids.has(String(input.task_id)) ? ok({ task: { id: input.task_id, ...input } }) : err("משימה לא נמצאה");
@@ -61,6 +65,13 @@ function mockTools(): ToolRunner {
         return ok({ tasks: suite.defaults.openTasks });
       case "recall":
         return ok({ results: [] });
+      case "set_reminder":
+        if (input.task_id && !ids.has(String(input.task_id)) && !created.has(String(input.task_id))) return err("משימה לא נמצאה");
+        return ok({ reminder_id: crypto.randomUUID(), at: input.at });
+      case "list_reminders":
+        return ok({ reminders: [] });
+      case "cancel_reminder":
+        return ok({});
       case "add_project_note":
         return ok({ saved_to: input.kind });
       case "get_project_dossier":

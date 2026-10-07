@@ -6,6 +6,7 @@ import { HELP_TEXT, todayText } from "../_shared/commands.ts";
 import { db, requireEnv } from "../_shared/db.ts";
 import { miriChatId, sendText, sendTyping, type TgMessage, type TgUpdate } from "../_shared/channels/telegram.ts";
 import { embedPending, saveChunk } from "../_shared/memory/store.ts";
+import { handleCallback } from "../_shared/reminders/service.ts";
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
@@ -19,9 +20,13 @@ Deno.serve(async (req) => {
 
   const update = await req.json() as TgUpdate;
   const msg = update.message;
+  const cb = update.callback_query;
 
   // אימות 2: רק מירי. כל השאר מתעלמים בשקט (200 — כדי שטלגרם לא ישלח שוב)
-  if (!msg || msg.chat.id !== miriChatId() || msg.chat.type !== "private") return new Response("ok");
+  const fromMiri = msg
+    ? msg.chat.id === miriChatId() && msg.chat.type === "private"
+    : cb?.from.id === miriChatId();
+  if (!fromMiri) return new Response("ok");
 
   // dedupe: אם ה-update_id כבר נקלט — זו שליחה חוזרת
   const { error } = await db().from("telegram_updates").insert({ update_id: update.update_id });
@@ -31,7 +36,9 @@ Deno.serve(async (req) => {
     return new Response("error", { status: 500 }); // טלגרם ינסה שוב
   }
 
-  EdgeRuntime.waitUntil(handle(msg).catch((e) => console.error("handle failed", e)));
+  // כפתורים: קוד בלבד, בלי LLM
+  if (cb) EdgeRuntime.waitUntil(handleCallback(cb).catch((e) => console.error("callback failed", e)));
+  else if (msg) EdgeRuntime.waitUntil(handle(msg).catch((e) => console.error("handle failed", e)));
   return new Response("ok");
 });
 

@@ -79,6 +79,38 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "set_reminder",
+    description:
+      "קובע תזכורת שתישלח למירי בטלגרם בזמן מסוים, עם כפתורי בוצע/דחה. " +
+      "אם התזכורת על משימה — לקשר task_id (ליצור את המשימה קודם אם אין). תזכורת על דבר קטן שאינו משימה — רק text. " +
+      "בשבת/חג התזכורת נדחית אוטומטית למוצאי שבת.",
+    input_schema: {
+      type: "object",
+      properties: {
+        at: { type: "string", description: `מתי, ב-${LOCAL_ISO}. חייב להיות בעתיד` },
+        task_id: { type: ["string", "null"], description: "מזהה משימה קיימת, או null" },
+        text: { type: ["string", "null"], description: "מה להזכיר (חובה אם אין task_id)" },
+      },
+      required: ["at"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_reminders",
+    description: "תזכורות ומעקבים שממתינים לשליחה.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "cancel_reminder",
+    description: "מבטל תזכורת שעוד לא נשלחה.",
+    input_schema: {
+      type: "object",
+      properties: { reminder_id: { type: "string" } },
+      required: ["reminder_id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "get_project_dossier",
     description:
       "תיק פרויקט: מה הפרויקט, לקוח ואנשים, החלטות, מה נבנה, מה פתוח, וסיכומי סשני העבודה האחרונים ב-Claude Code. " +
@@ -284,6 +316,44 @@ const handlers: Record<string, (input: Input) => Promise<unknown>> = {
       .limit(Math.min(Number(i.limit) || 30, 100));
     if (error) throw error;
     return { ok: true, count: data.length, tasks: (data as unknown as TaskRow[]).map(presentTask) };
+  },
+
+  async set_reminder(i) {
+    const at = parseDue(i.at);
+    if (!at) throw new ToolError(`at חסר. נדרש ${LOCAL_ISO}`);
+    if (new Date(at).getTime() < Date.now() - 60_000) throw new ToolError(`at בעבר (${i.at}). לבדוק מול "עכשיו" בהקשר`);
+    let taskId: string | null = null;
+    if (i.task_id) taskId = (await getTask(i.task_id)).id;
+    const text = typeof i.text === "string" && i.text.trim() ? i.text.trim() : null;
+    if (!taskId && !text) throw new ToolError("צריך task_id או text");
+    const { data, error } = await db().from("reminders")
+      .insert({ task_id: taskId, kind: "reminder", text, send_at: at }).select("id").single();
+    if (error) throw error;
+    return { ok: true, reminder_id: data.id, at: formatLocalIso(new Date(at)) };
+  },
+
+  async list_reminders() {
+    const { data, error } = await db().from("reminders")
+      .select("id, kind, text, send_at, tasks(title)").eq("status", "pending").order("send_at").limit(30);
+    if (error) throw error;
+    return {
+      ok: true,
+      // deno-lint-ignore no-explicit-any
+      reminders: (data ?? []).map((r: any) => ({
+        id: r.id,
+        kind: r.kind === "reminder" ? "תזכורת" : "מעקב אוטומטי על מועד",
+        what: r.tasks?.title ?? r.text,
+        at: formatLocalIso(new Date(r.send_at)),
+      })),
+    };
+  },
+
+  async cancel_reminder(i) {
+    const { data, error } = await db().from("reminders").update({ status: "cancelled" })
+      .eq("id", String(i.reminder_id)).eq("status", "pending").select("id");
+    if (error) throw error;
+    if (!data?.length) throw new ToolError("תזכורת לא נמצאה או שכבר נשלחה");
+    return { ok: true };
   },
 
   async get_project_dossier(i) {

@@ -71,5 +71,43 @@ export interface TgUpdate {
   update_id: number;
   message?: TgMessage;
   edited_message?: TgMessage;
-  callback_query?: { id: string; data?: string; message?: TgMessage; from: { id: number } };
+  callback_query?: {
+    id: string;
+    data?: string;
+    message?: TgMessage & { reply_markup?: { inline_keyboard: Keyboard } };
+    from: { id: number };
+  };
+}
+
+// ---------- כפתורים ----------
+
+export interface InlineButton {
+  text: string;
+  callback_data: string; // עד 64 בתים
+}
+export type Keyboard = InlineButton[][];
+
+export async function sendWithKeyboard(chatId: number | string, text: string, keyboard: Keyboard): Promise<number> {
+  const msg = await call<{ message_id: number }>("sendMessage", {
+    chat_id: chatId,
+    text,
+    link_preview_options: { is_disabled: true },
+    reply_markup: { inline_keyboard: keyboard },
+  });
+  return msg.message_id;
+}
+
+export async function answerCallback(callbackId: string, text?: string): Promise<void> {
+  await call("answerCallbackQuery", { callback_query_id: callbackId, text }).catch(() => {});
+}
+
+/** מחליף טקסט ומקלדת של הודעה קיימת (מקלדת ריקה = הכפתורים נעלמים). */
+export async function editMessage(chatId: number, messageId: number, text: string, keyboard: Keyboard = []) {
+  await call("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    link_preview_options: { is_disabled: true },
+    reply_markup: { inline_keyboard: keyboard },
+  }).catch((e) => console.error("editMessage failed", e));
 }

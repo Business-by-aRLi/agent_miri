@@ -158,3 +158,83 @@ export function timeContext(now: Date): TimeContext {
     localIso: formatLocalIso(now),
   };
 }
+
+// ---------- שבת וחג ----------
+// מקור: Hebcal (הדלקת נרות / הבדלה לרמת גן). השליפה מהרשת נמצאת ב-hebcal.ts; כאן רק חישוב טהור.
+
+export interface HebcalEvent {
+  category: string; // "candles" | "havdalah" | ...
+  date: string; // ISO עם offset
+}
+
+export interface QuietWindow {
+  start: Date;
+  end: Date;
+}
+
+/** מרווחי ביטחון: לא שולחים חצי שעה לפני הדלקת נרות, וממתינים 10 דקות אחרי הבדלה. */
+export const QUIET_BEFORE_MIN = 30;
+export const QUIET_AFTER_MIN = 10;
+
+/**
+ * חלונות שקט: מכל הדלקת נרות ועד ההבדלה הראשונה אחריה.
+ * למה כך ולא לפי ימים: חג שצמוד לשבת (ראש השנה שישי-ראשון, שבועות חמישי-שבת) מופיע כשתי הדלקות ברצף
+ * והבדלה אחת — החלון מתמזג מעצמו. הדלקה בלי הבדלה אחריה (סוף הטווח שנשלף) — לא נוצר חלון חלקי.
+ */
+export function buildQuietWindows(events: HebcalEvent[]): QuietWindow[] {
+  const sorted = events
+    .filter((e) => e.category === "candles" || e.category === "havdalah")
+    .map((e) => ({ kind: e.category, at: new Date(e.date) }))
+    .sort((a, b) => a.at.getTime() - b.at.getTime());
+  const windows: QuietWindow[] = [];
+  let openAt: Date | null = null;
+  for (const e of sorted) {
+    if (e.kind === "candles" && !openAt) openAt = e.at;
+    else if (e.kind === "havdalah" && openAt) {
+      windows.push({
+        start: new Date(openAt.getTime() - QUIET_BEFORE_MIN * 60000),
+        end: new Date(e.at.getTime() + QUIET_AFTER_MIN * 60000),
+      });
+      openAt = null;
+    }
+  }
+  return windows;
+}
+
+export function quietWindowAt(at: Date, windows: QuietWindow[]): QuietWindow | null {
+  return windows.find((w) => at >= w.start && at < w.end) ?? null;
+}
+
+/**
+ * הרגע הקרוב שמותר לשלוח בו: מחוץ לשבת/חג, ואם ביקשו — בתוך שעות שיחה (לשעון ישראל).
+ * talkHours חל רק על הודעות יזומות של הסוכן; תזכורת שמירי ביקשה ל-23:00 יוצאת ב-23:00.
+ */
+export function nextSendTime(
+  at: Date,
+  windows: QuietWindow[],
+  talkHours?: { start: string; end: string },
+): Date {
+  let t = at;
+  for (let guard = 0; guard < 10; guard++) {
+    const w = quietWindowAt(t, windows);
+    if (w) {
+      t = w.end;
+      continue;
+    }
+    if (talkHours) {
+      const local = formatLocalIso(t);
+      const hhmm = local.slice(11);
+      if (hhmm < talkHours.start) {
+        t = localToUtc(`${local.slice(0, 10)}T${talkHours.start}`);
+        continue;
+      }
+      if (hhmm >= talkHours.end) {
+        const next = new Date(localToUtc(`${local.slice(0, 10)}T12:00`).getTime() + 24 * 3600000);
+        t = localToUtc(`${formatLocalIso(next).slice(0, 10)}T${talkHours.start}`);
+        continue;
+      }
+    }
+    return t;
+  }
+  return t;
+}

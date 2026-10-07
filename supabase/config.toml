@@ -421,3 +421,7 @@ verify_jwt = false
 [functions.ingest]
 # נקרא מה-hook במחשב של מירי, עם X-Ingest-Secret (לא JWT)
 verify_jwt = false
+
+[functions.dispatcher]
+# נקרא מ-pg_cron עם X-Dispatcher-Secret (נבדק מול Vault)
+verify_jwt = false
